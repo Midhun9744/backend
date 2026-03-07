@@ -212,27 +212,27 @@ def reject_request(req_id):
 # =================================================
 # 6) TOGGLE MONITORING ACCESS (Switch ON/OFF)
 # =================================================
-@access_bp.route("/toggle/<int:perm_id>", methods=["POST"])
+@access_bp.route("/toggle/<int:req_id>", methods=["POST"])
 @jwt_required()
-def toggle_access(perm_id):
+def toggle_access(req_id):
 
-    senior_id = get_jwt_identity()
-
-    perm = AccessPermission.query.get(perm_id)
-
-    if not perm:
-        return {"error": "Permission not found"}, 404
-
-    house = Household.query.get(perm.household_id)
-
-    if house.senior_user_id != senior_id:
-        return {"error": "Unauthorized"}, 403
+    user_id = int(get_jwt_identity())
 
     data = request.get_json()
     enabled = data.get("enabled", True)
 
-    perm.enabled = enabled
+    req = AccessPermission.query.get(req_id)
 
+    if not req:
+        return {"error": "Request not found"}, 404
+
+    house = Household.query.get(req.household_id)
+
+    # Only senior can toggle access
+    if house.senior_user_id != user_id:
+        return {"error": "Unauthorized"}, 403
+
+    req.enabled = enabled
     db.session.commit()
 
     return {"message": "Access updated"}, 200

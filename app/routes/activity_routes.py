@@ -80,8 +80,41 @@ def update_activity():
 # 2️⃣ GET LATEST ACTIVITY (Mobile App)
 # =================================================
 @activity_bp.route("/latest", methods=["GET"])
+@jwt_required()
 def get_latest_activity():
 
+    user_id = int(get_jwt_identity())
+
+    from app.models.user import User
+    from app.models.household import Household
+    from app.models.access_permission import AccessPermission
+
+    user = User.query.get(user_id)
+
+    # ----------------------------
+    # SENIOR → Always allowed
+    # ----------------------------
+    if user.role == "senior":
+        pass
+
+    # ----------------------------
+    # CAREGIVER / MEMBER
+    # ----------------------------
+    else:
+        permission = AccessPermission.query.filter_by(
+            user_id=user_id,
+            status="approved"
+        ).first()
+
+        if not permission:
+            return {"error": "Access denied"}, 403
+
+        if permission.enabled is False:
+            return {"error": "Access disabled by senior"}, 403
+
+    # ----------------------------
+    # RETURN LIVE DATA
+    # ----------------------------
     if latest_activity["activity"] is None:
         return {
             "activity": None,
@@ -89,7 +122,6 @@ def get_latest_activity():
         }, 200
 
     return latest_activity, 200
-
 
 # =================================================
 # 3️⃣ GET ACTIVITY HISTORY (FROM DATABASE)
@@ -132,6 +164,9 @@ def get_activity_history():
 
         if not permission:
             return {"error": "No household access"}, 403
+        
+        if permission.enabled is False:
+            return {"error": "Access disabled"}, 403
 
         household_id = permission.household_id
 
