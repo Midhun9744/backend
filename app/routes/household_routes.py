@@ -10,12 +10,9 @@ import random
 import string
 
 
-
 # =================================================
-# ⭐ CREATE BLUEPRINT (REQUIRED)
+# CREATE BLUEPRINT
 # =================================================
-# household_bp = Blueprint("household", __name__)
-
 household_bp = Blueprint(
     "household",
     __name__,
@@ -23,72 +20,88 @@ household_bp = Blueprint(
 )
 
 
-
-
 # =================================================
-# ⭐ HELPER — GENERATE INVITE CODE
+# HELPER — GENERATE INVITE CODE
 # =================================================
 def generate_code(length=6):
     chars = string.ascii_uppercase + string.digits
-    return "HME-" + "".join(
-        random.choice(chars) for _ in range(length)
-    )
+
+    while True:
+        code = "HME-" + "".join(
+            random.choice(chars) for _ in range(length)
+        )
+
+        # ensure invite code is unique
+        exists = Household.query.filter_by(
+            invite_code=code
+        ).first()
+
+        if not exists:
+            return code
 
 
 # =================================================
-# ⭐ CREATE HOUSEHOLD + MONITORED PERSON
+# CREATE HOUSEHOLD + MONITORED PERSON
 # =================================================
 @household_bp.route("/create", methods=["POST"])
 @jwt_required()
 def create_household():
-    
 
-    # user_id = get_jwt_identity()
-    # user = User.query.get(user_id)
-
-    # TEMP DEBUG — REMOVE AFTER FIXING JWT
-    user = User.query.first()
+    # ----------------------------------
+    # GET CURRENT USER FROM JWT
+    # ----------------------------------
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
 
     if not user:
-      return {"error": "No users found"}, 400
+        return {"error": "User not found"}, 404
 
-    user_id = user.id
+    print("\n===== USER DEBUG =====")
+    print("JWT USER ID:", user_id)
+    print("USER ROLE:", user.role)
+    print("======================\n")
 
-
-    print("\n===== DEBUG REQUEST START =====")
-
-    print("Headers:", dict(request.headers))
-    print("Raw Data:", request.data)
-    print("Content-Type:", request.content_type)
-
-    json_data = request.get_json(force=True, silent=True)
-    print("Parsed JSON:", json_data)
-
-    print("===== DEBUG REQUEST END =====\n")
 
     # ----------------------------------
-    # Allow only senior users
+    # ALLOW ONLY SENIOR USERS
     # ----------------------------------
-    if not user or user.role != "senior":
+    if user.role != "senior":
         return {"error": "Only senior can create household"}, 403
 
+
     # ----------------------------------
-    # Prevent multiple households
+    # PREVENT MULTIPLE HOUSEHOLDS
     # ----------------------------------
     existing = Household.query.filter_by(
         senior_user_id=user_id
     ).first()
 
     if existing:
-        return {"error": "Household already exists"}, 400
+        return {
+            "error": "Household already exists",
+            "invite_code": existing.invite_code
+        }, 400
+
 
     # ----------------------------------
-    # SAFE JSON PARSING
+    # DEBUG REQUEST
     # ----------------------------------
+    print("\n===== DEBUG REQUEST START =====")
+
+    print("Headers:", dict(request.headers))
+    print("Raw Data:", request.data)
+    print("Content-Type:", request.content_type)
+
     data = request.get_json(force=True, silent=True)
 
-    print("Received JSON:", data)
+    print("Parsed JSON:", data)
 
+    print("===== DEBUG REQUEST END =====\n")
+
+
+    # ----------------------------------
+    # VALIDATE JSON
+    # ----------------------------------
     if not data:
         return {"error": "Invalid or missing JSON"}, 400
 
@@ -100,9 +113,12 @@ def create_household():
             "error": "house_name and person_name are required"
         }, 400
 
+
     invite_code = generate_code()
 
+
     try:
+
         # ----------------------------------
         # CREATE HOUSEHOLD
         # ----------------------------------
@@ -115,6 +131,7 @@ def create_household():
 
         db.session.add(household)
         db.session.commit()
+
 
         # ----------------------------------
         # CREATE MONITORED PERSON
@@ -130,13 +147,18 @@ def create_household():
         db.session.add(person)
         db.session.commit()
 
+
         return {
             "message": "Household created successfully",
             "household_id": household.id,
             "invite_code": invite_code
         }, 200
 
+
     except Exception as e:
+
         db.session.rollback()
+
         print("DB ERROR:", str(e))
+
         return {"error": str(e)}, 500
